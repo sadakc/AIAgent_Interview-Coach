@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { Power } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { createSession } from "@/lib/interview.functions";
 
 export const Route = createFileRoute("/_authenticated/home")({
@@ -45,11 +47,24 @@ function HomePage() {
 
   return (
     <main className="mx-auto max-w-lg px-6 pb-10 pt-10">
-      <header className="mb-8">
-        <h1 className="text-h1">Welcome to your AI interview.</h1>
-        <p className="mt-1 text-body text-text-secondary">
-          Paste the role's job description and choose a length to begin.
-        </p>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-h1">Welcome to your AI interview.</h1>
+          <p className="mt-1 text-body text-text-secondary">
+            Paste the role's job description and choose a length to begin.
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label="Sign out"
+          onClick={async () => {
+            await supabase.auth.signOut();
+            navigate({ to: "/auth" });
+          }}
+          className="pill flex h-10 w-10 shrink-0 items-center justify-center p-0"
+        >
+          <Power size={18} />
+        </button>
       </header>
 
       <section className="mb-6">

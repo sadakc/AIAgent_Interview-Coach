@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { StateOrb, type OrbState } from "@/components/state-orb";
 import { submitAnswer, endAndScore } from "@/lib/interview.functions";
-import { Mic, MicOff, X, Send } from "lucide-react";
+import { Mic, MicOff } from "lucide-react";
 
 export const Route = createFileRoute("/interview/$id")({
   ssr: false,
@@ -49,6 +49,8 @@ function InterviewPage() {
   const [interim, setInterim] = useState("");
   const [connErr, setConnErr] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
   const [manualText, setManualText] = useState("");
 
   const startTimeRef = useRef<number>(Date.now());
@@ -304,17 +306,41 @@ function InterviewPage() {
   };
 
 
+  const endingRef = useRef(false);
   const finish = async () => {
+    if (endingRef.current) return;
+    endingRef.current = true;
+    endedRef.current = true;
+    setEnded(true);
+    setEnding(true);
+    setEndError(null);
     try {
-      setOrb("thinking");
       window.speechSynthesis?.cancel();
+      await stopListening();
+    } catch { /* ignore */ }
+    try {
       const res = await end({ data: { sessionId: id } });
-      navigate({ to: "/reports/$id", params: { id }, replace: true });
       void res;
+      navigate({ to: "/reports/$id", params: { id }, replace: true });
     } catch (e) {
-      setConnErr(e instanceof Error ? e.message : "Failed to score");
+      setEndError(e instanceof Error ? e.message : "Failed to end interview");
+      setEnding(false);
     }
   };
+
+  const retryFinish = async () => {
+    setEnding(true);
+    setEndError(null);
+    try {
+      const res = await end({ data: { sessionId: id } });
+      void res;
+      navigate({ to: "/reports/$id", params: { id }, replace: true });
+    } catch (e) {
+      setEndError(e instanceof Error ? e.message : "Failed to end interview");
+      setEnding(false);
+    }
+  };
+
 
   // Auto-scroll
   useEffect(() => {
@@ -330,18 +356,22 @@ function InterviewPage() {
 
   return (
     <main className="fixed inset-0 flex flex-col bg-background">
-      <header className="flex items-center justify-between px-6 pt-6" style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}>
+      <header
+        className="relative flex items-center justify-end px-6 pt-6"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 12px)" }}
+      >
         <button
           onClick={finish}
+          disabled={ending}
           aria-label="End interview"
-          className="btn-ghost h-11 w-11 rounded-pill p-0"
+          className="pill absolute left-6 top-6 min-h-[40px] px-4 text-body-sm disabled:opacity-60"
+          style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
         >
-          <X size={20} />
+          End Interview
         </button>
         <div className="text-body-sm tabular-nums text-text-secondary">
           <span className="text-text-tertiary">Time left </span>{mm}:{ss}
         </div>
-        <div className="w-11" />
       </header>
 
       {connErr && (
@@ -413,10 +443,9 @@ function InterviewPage() {
                 <button
                   onClick={() => commitAnswer()}
                   disabled={orb === "thinking" || orb === "speaking" || submittingRef.current}
-                  aria-label="Send answer"
-                  className="btn-primary h-12 w-12 rounded-pill p-0"
+                  className="btn-primary min-h-[48px] px-6 text-body-sm"
                 >
-                  <Send size={18} />
+                  Enter
                 </button>
               </>
             )}
@@ -447,6 +476,30 @@ function InterviewPage() {
           </div>
         )}
       </div>
+      {(ending || endError) && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-live="polite"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-background/85 backdrop-blur-sm px-6"
+        >
+          {ending && !endError ? (
+            <>
+              <div className="h-10 w-10 animate-spin rounded-pill border-2 border-border border-t-accent" />
+              <p className="text-body text-text-primary">Ending your interview…</p>
+              <p className="text-caption text-text-tertiary">Scoring your answers.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-h3 text-text-primary">Couldn't end interview</p>
+              <p className="text-body-sm text-text-secondary text-center">{endError}</p>
+              <button onClick={retryFinish} className="btn-primary min-h-[44px] px-6">
+                Try again
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </main>
   );
 }

@@ -21,13 +21,13 @@ export const emailReportSummary = createServerFn({ method: "POST" })
     }
 
     const [{ data: session }, { data: report }] = await Promise.all([
-      supabase.from("interview_sessions").select("job_description_parsed").eq("id", data.sessionId).single(),
+      supabase.from("interview_sessions").select("role_title, job_description_parsed").eq("id", data.sessionId).single(),
       supabase.from("reports").select("*").eq("session_id", data.sessionId).single(),
     ]);
     if (!session || !report) throw new Error("Report not found.");
 
-    const parsed = (session.job_description_parsed as { role?: string } | null) || {};
-    const roleTitle = parsed.role || "Interview";
+    const parsed = (session.job_description_parsed as { role_title?: string; role?: string } | null) || {};
+    const roleTitle = session.role_title || parsed.role_title || parsed.role || "Interview";
 
     try {
       const result = await sendTemplateEmail("report-summary", recipient, {
@@ -46,3 +46,4 @@ export const emailReportSummary = createServerFn({ method: "POST" })
       throw new Error("Could not send the report email right now. Please try again later.");
     }
   });
+

@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDistanceToNow } from "date-fns";
+import { Trash2, Loader2 } from "lucide-react";
 
 type Row = {
   id: string;
@@ -92,25 +93,105 @@ function InterviewsPage() {
       ) : (
         <ul className="mt-5 space-y-3">
           {list.map((r) => (
-            <li key={r.id}>
-              <Link
-                to="/reports/$id"
-                params={{ id: r.id }}
-                className="card-base flex items-center justify-between gap-3 p-4 transition-colors hover:border-accent/50"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-h3">{r.role_title || "Untitled role"}</p>
-                  <p className="mt-1 text-body-sm text-text-secondary">
-                    {r.duration_minutes} min · {formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}
-                  </p>
-                </div>
-                <ScoreBadge score={r.overall_score} status={r.status} />
-              </Link>
-            </li>
+            <InterviewRow
+              key={r.id}
+              row={r}
+              onDeleted={(id) => setRows((prev) => (prev ? prev.filter((x) => x.id !== id) : prev))}
+            />
           ))}
         </ul>
       )}
     </main>
+  );
+}
+
+function InterviewRow({ row: r, onDeleted }: { row: Row; onDeleted: (id: string) => void }) {
+  const inProgress = r.status === "in_progress";
+  const linkProps = inProgress
+    ? { to: "/interview/$id" as const, params: { id: r.id } }
+    : { to: "/reports/$id" as const, params: { id: r.id } };
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armConfirm = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setError(null);
+    setConfirming(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setConfirming(false), 4000);
+  };
+
+  const cancel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setConfirming(false);
+  };
+
+  const doDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setDeleting(true);
+    setError(null);
+    const { error } = await supabase.from("interview_sessions").delete().eq("id", r.id);
+    if (error) {
+      setDeleting(false);
+      setError(error.message);
+      return;
+    }
+    onDeleted(r.id);
+  };
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  return (
+    <li>
+      <div className="card-base flex items-center gap-3 p-4 transition-colors hover:border-accent/50">
+        <Link {...linkProps} className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-h3">{r.role_title || "Untitled role"}</p>
+            <p className="mt-1 text-body-sm text-text-secondary">
+              {r.duration_minutes} min · {formatDistanceToNow(new Date(r.started_at), { addSuffix: true })}
+              {inProgress ? " · Tap to resume" : ""}
+            </p>
+            {error && <p className="mt-1 text-caption text-danger">{error} · Tap trash to retry.</p>}
+          </div>
+          <ScoreBadge score={r.overall_score} status={r.status} />
+        </Link>
+        {confirming ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={doDelete}
+              disabled={deleting}
+              aria-label="Confirm delete"
+              className="pill min-h-[36px] bg-danger px-3 text-body-sm text-white disabled:opacity-60"
+            >
+              {deleting ? <Loader2 size={14} className="animate-spin" /> : "Delete"}
+            </button>
+            <button
+              onClick={cancel}
+              disabled={deleting}
+              aria-label="Cancel delete"
+              className="pill min-h-[36px] px-3 text-body-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={armConfirm}
+            aria-label="Delete interview"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger"
+          >
+            <Trash2 size={18} />
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 

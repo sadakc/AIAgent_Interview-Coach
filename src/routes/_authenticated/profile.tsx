@@ -1,7 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { updateAppearance } from "@/components/theme-applier";
+import { getMyAdminStatus } from "@/lib/admin.functions";
 
 type Theme = "light" | "dark" | "system";
 
@@ -21,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/profile")({
 });
 
 function ProfilePage() {
-  const nav = useNavigate();
+  const fetchAdminStatus = useServerFn(getMyAdminStatus);
   const [email, setEmail] = useState<string>("");
   const [theme, setTheme] = useState<Theme>("system");
   const [fontScale, setFontScale] = useState(1);
@@ -29,17 +31,21 @@ function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [phoneSaved, setPhoneSaved] = useState("");
   const [phoneStatus, setPhoneStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
       if (!data.user) return;
       setEmail(data.user.email || "");
-      const { data: p } = await supabase
+      const [{ data: p }, adminStatus] = await Promise.all([
+        supabase
         .from("profiles")
         .select("theme_preference, font_scale, push_to_talk_default, phone")
         .eq("id", data.user.id)
-        .maybeSingle();
+        .maybeSingle(),
+        fetchAdminStatus().catch(() => ({ isAdmin: false })),
+      ]);
       if (p) {
         setTheme((p.theme_preference as Theme) || "system");
         setFontScale(Number(p.font_scale ?? 1));
@@ -47,8 +53,9 @@ function ProfilePage() {
         setPhone(p.phone ?? "");
         setPhoneSaved(p.phone ?? "");
       }
+      setIsAdmin(adminStatus.isAdmin);
     })();
-  }, []);
+  }, [fetchAdminStatus]);
 
   const persist = async (patch: { theme_preference?: Theme; font_scale?: number; push_to_talk_default?: boolean; phone?: string | null }) => {
     const { data } = await supabase.auth.getUser();
@@ -84,10 +91,8 @@ function ProfilePage() {
     }
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    nav({ to: "/auth" });
-  };
+
+
 
   return (
     <main className="mx-auto max-w-lg px-6 pt-10">
@@ -171,9 +176,12 @@ function ProfilePage() {
         </div>
       </section>
 
-      <button onClick={signOut} className="btn-ghost mt-8 w-full text-danger">
-        Sign out
-      </button>
+      {isAdmin && (
+        <Link to="/admin" className="btn-ghost mt-8 w-full">
+          Admin
+        </Link>
+      )}
+
     </main>
   );
 }

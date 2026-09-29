@@ -1,9 +1,9 @@
-import { createFileRoute, useParams, redirect, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, useParams, useNavigate, redirect, Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { emailReportSummary } from "@/lib/report-email.functions";
-import { ChevronDown, Mail } from "lucide-react";
+import { ChevronDown, Mail, Trash2, Loader2 } from "lucide-react";
 
 type Report = {
   overall_score: number;
@@ -37,16 +37,48 @@ export const Route = createFileRoute("/reports/$id")({
 
 function ReportPage() {
   const { id } = useParams({ from: "/reports/$id" });
+  const navigate = useNavigate();
   const emailReport = useServerFn(emailReportSummary);
   const [report, setReport] = useState<Report | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [openQ, setOpenQ] = useState<number | null>(null);
   const [visibleCount, setVisibleCount] = useState(3);
   const [showTranscript, setShowTranscript] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [emailState, setEmailState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [emailMsg, setEmailMsg] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const armDelete = () => {
+    setDeleteErr(null);
+    setConfirmingDelete(true);
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    confirmTimerRef.current = setTimeout(() => setConfirmingDelete(false), 4000);
+  };
+  const cancelDelete = () => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setConfirmingDelete(false);
+  };
+  const doDelete = async () => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    setDeleting(true);
+    setDeleteErr(null);
+    const { error } = await supabase.from("interview_sessions").delete().eq("id", id);
+    if (error) {
+      setDeleting(false);
+      setDeleteErr(error.message);
+      return;
+    }
+    navigate({ to: "/interviews" });
+  };
+  useEffect(() => () => { if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current); }, []);
+
 
   const sendEmail = async () => {
     setEmailState("sending");
@@ -69,18 +101,35 @@ function ReportPage() {
     (async () => {
       const [{ data: r, error }, { data: s }, { data: t }] = await Promise.all([
         supabase.from("reports").select("*").eq("session_id", id).maybeSingle(),
-        supabase.from("interview_sessions").select("role_title").eq("id", id).maybeSingle(),
+        supabase.from("interview_sessions").select("role_title, status").eq("id", id).maybeSingle(),
         supabase.from("turns").select("*").eq("session_id", id).order("sequence_number"),
       ]);
       if (error) setErr(error.message);
       if (r) setReport(r as unknown as Report);
-      if (s) setRole(s.role_title);
+      if (s) {
+        setRole(s.role_title);
+        setSessionStatus(s.status);
+      }
       if (t) setTurns(t as Turn[]);
+      setLoaded(true);
     })();
   }, [id]);
 
   if (err) return <ErrorState msg={err} />;
-  if (!report) return <Loading />;
+  if (!loaded) return <Loading />;
+  if (!report)
+    return (
+      <NoReportState
+        status={sessionStatus}
+        sessionId={id}
+        confirmingDelete={confirmingDelete}
+        deleting={deleting}
+        deleteErr={deleteErr}
+        onArm={armDelete}
+        onCancel={cancelDelete}
+        onDelete={doDelete}
+      />
+    );
 
   const scoreColor = (n: number) => (n >= 80 ? "var(--success)" : n >= 60 ? "var(--warning)" : "var(--danger)");
 
@@ -112,6 +161,37 @@ function ReportPage() {
         {emailMsg && emailState === "error" && (
           <p className="mt-2 text-body-sm text-danger">{emailMsg}</p>
         )}
+      </section>
+
+      <section className="mt-3">
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={doDelete}
+              disabled={deleting}
+              className="pill inline-flex flex-1 items-center justify-center gap-2 bg-danger text-white disabled:opacity-60"
+            >
+              {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {deleting ? "Deleting…" : "Confirm delete"}
+            </button>
+            <button
+              onClick={cancelDelete}
+              disabled={deleting}
+              className="pill inline-flex items-center justify-center px-4"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={armDelete}
+            className="btn-ghost inline-flex w-full items-center justify-center gap-2 border border-border text-danger"
+          >
+            <Trash2 size={16} />
+            Delete interview
+          </button>
+        )}
+        {deleteErr && <p className="mt-2 text-body-sm text-danger">{deleteErr} · Tap delete to retry.</p>}
       </section>
 
 
@@ -235,6 +315,79 @@ function ErrorState({ msg }: { msg: string }) {
     <main className="mx-auto max-w-lg px-6 pt-16 text-center">
       <p className="text-body text-danger">{msg}</p>
       <Link to="/home" className="btn-primary mt-6 inline-flex">Go home</Link>
+    </main>
+  );
+}
+
+function NoReportState({
+  status,
+  sessionId,
+  confirmingDelete,
+  deleting,
+  deleteErr,
+  onArm,
+  onCancel,
+  onDelete,
+}: {
+  status: string | null;
+  sessionId: string;
+  confirmingDelete: boolean;
+  deleting: boolean;
+  deleteErr: string | null;
+  onArm: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const inProgress = status === "in_progress";
+  return (
+    <main className="mx-auto max-w-lg px-6 pt-16 text-center">
+      <Link to="/interviews" className="text-body-sm text-text-secondary">← All interviews</Link>
+      <h1 className="text-h2 mt-6">
+        {inProgress ? "This interview isn't finished yet" : "No report available"}
+      </h1>
+      <p className="mt-3 text-body text-text-secondary">
+        {inProgress
+          ? "Resume it to keep going. A report will be generated once you complete the session."
+          : "This session ended without a scored report. You can start a fresh interview from home."}
+      </p>
+      <div className="mt-8 grid grid-cols-2 gap-3">
+        <Link to="/interviews" className="btn-ghost flex items-center justify-center border border-border">Back</Link>
+        {inProgress ? (
+          <Link to="/interview/$id" params={{ id: sessionId }} className="btn-primary flex items-center justify-center">Resume</Link>
+        ) : (
+          <Link to="/home" className="btn-primary flex items-center justify-center">Start another</Link>
+        )}
+      </div>
+      <div className="mt-6">
+        {confirmingDelete ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onDelete}
+              disabled={deleting}
+              className="pill inline-flex flex-1 items-center justify-center gap-2 bg-danger text-white disabled:opacity-60"
+            >
+              {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+              {deleting ? "Deleting…" : "Confirm delete"}
+            </button>
+            <button
+              onClick={onCancel}
+              disabled={deleting}
+              className="pill inline-flex items-center justify-center px-4"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onArm}
+            className="btn-ghost inline-flex w-full items-center justify-center gap-2 border border-border text-danger"
+          >
+            <Trash2 size={16} />
+            Delete interview
+          </button>
+        )}
+        {deleteErr && <p className="mt-2 text-body-sm text-danger">{deleteErr} · Tap delete to retry.</p>}
+      </div>
     </main>
   );
 }
