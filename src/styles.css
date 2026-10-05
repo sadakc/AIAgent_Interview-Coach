@@ -82,6 +82,20 @@
   --danger: #f0665a;
 }
 
+html.contrast {
+  --border: #6b6b73;
+  --text-primary: #000000;
+  --text-secondary: #26262b;
+  --accent: #4a2fd6;
+}
+
+html.contrast.dark {
+  --border: #9a9aa3;
+  --text-primary: #ffffff;
+  --text-secondary: #e2e2e6;
+  --accent: #b3a8ff;
+}
+
 @layer base {
   * {
     border-color: var(--border);

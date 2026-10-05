@@ -33,32 +33,44 @@ function InterviewsPage() {
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"date" | "score">("date");
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE = 20;
 
-  const load = async () => {
+  const load = async (offset = 0) => {
     setErr(null);
-    const { data, error } = await supabase
+    let query = supabase
       .from("interview_sessions")
       .select("id, role_title, duration_minutes, status, started_at, reports(overall_score)")
-      .order("started_at", { ascending: false });
-    if (error) return setErr(error.message);
-    setRows(
-      (data || []).map((r) => ({
-        id: r.id,
-        role_title: r.role_title,
-        duration_minutes: r.duration_minutes,
-        status: r.status,
-        started_at: r.started_at,
-        overall_score: (r.reports as { overall_score: number }[] | null)?.[0]?.overall_score ?? null,
-      })),
-    );
+      .order("started_at", { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (q.trim()) query = query.ilike("role_title", `%${q.trim()}%`);
+    const { data, error } = await query;
+    if (error) return setErr("Couldn't load interviews. Please retry.");
+    const mapped = (data || []).map((r) => ({
+      id: r.id,
+      role_title: r.role_title,
+      duration_minutes: r.duration_minutes,
+      status: r.status,
+      started_at: r.started_at,
+      overall_score: (r.reports as { overall_score: number }[] | null)?.[0]?.overall_score ?? null,
+    }));
+    setHasMore(mapped.length === PAGE);
+    setRows((prev) => (offset === 0 ? mapped : [...(prev || []), ...mapped]));
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    const t = setTimeout(() => load(0), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    await load(rows?.length ?? 0);
+    setLoadingMore(false);
+  };
 
   let list = rows || [];
-  if (q.trim()) list = list.filter((r) => (r.role_title || "").toLowerCase().includes(q.toLowerCase()));
   list = [...list].sort((a, b) => {
     if (sort === "score") return (b.overall_score ?? -1) - (a.overall_score ?? -1);
     return new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
@@ -82,12 +94,17 @@ function InterviewsPage() {
         </button>
       </div>
 
-      {err && <p className="mt-4 text-body-sm text-danger">{err}</p>}
+      {err && (
+        <p className="mt-4 text-body-sm text-danger">
+          {err}{" "}
+          <button onClick={() => load(0)} className="underline">Retry</button>
+        </p>
+      )}
       {rows === null ? (
         <SkeletonList />
       ) : list.length === 0 ? (
         <div className="mt-16 text-center">
-          <p className="text-body text-text-secondary">No interviews yet.</p>
+          <p className="text-body text-text-secondary">{q.trim() ? "No matching interviews." : "No interviews yet."}</p>
           <Link to="/home" className="btn-primary mt-4 inline-flex">Start your first</Link>
         </div>
       ) : (
@@ -100,6 +117,11 @@ function InterviewsPage() {
             />
           ))}
         </ul>
+      )}
+      {hasMore && rows && rows.length > 0 && (
+        <button onClick={loadMore} disabled={loadingMore} className="pill mx-auto mb-8 mt-4 flex min-h-[44px] px-5 text-body-sm">
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
       )}
     </main>
   );

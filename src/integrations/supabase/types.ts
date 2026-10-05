@@ -97,7 +97,9 @@ export type Database = {
           display_name: string | null
           email: string | null
           font_scale: number
+          high_contrast: boolean
           id: string
+          is_admin: boolean
           phone: string | null
           push_to_talk_default: boolean
           theme_preference: Database["public"]["Enums"]["theme_preference"]
@@ -108,7 +110,9 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           font_scale?: number
+          high_contrast?: boolean
           id: string
+          is_admin?: boolean
           phone?: string | null
           push_to_talk_default?: boolean
           theme_preference?: Database["public"]["Enums"]["theme_preference"]
@@ -119,7 +123,9 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           font_scale?: number
+          high_contrast?: boolean
           id?: string
+          is_admin?: boolean
           phone?: string | null
           push_to_talk_default?: boolean
           theme_preference?: Database["public"]["Enums"]["theme_preference"]

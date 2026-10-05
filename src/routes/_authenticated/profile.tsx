@@ -28,6 +28,7 @@ function ProfilePage() {
   const [theme, setTheme] = useState<Theme>("system");
   const [fontScale, setFontScale] = useState(1);
   const [ptt, setPtt] = useState(false);
+  const [contrast, setContrast] = useState(false);
   const [phone, setPhone] = useState("");
   const [phoneSaved, setPhoneSaved] = useState("");
   const [phoneStatus, setPhoneStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -41,7 +42,7 @@ function ProfilePage() {
       const [{ data: p }, adminStatus] = await Promise.all([
         supabase
         .from("profiles")
-        .select("theme_preference, font_scale, push_to_talk_default, phone")
+        .select("theme_preference, font_scale, push_to_talk_default, phone, high_contrast")
         .eq("id", data.user.id)
         .maybeSingle(),
         fetchAdminStatus().catch(() => ({ isAdmin: false })),
@@ -50,6 +51,7 @@ function ProfilePage() {
         setTheme((p.theme_preference as Theme) || "system");
         setFontScale(Number(p.font_scale ?? 1));
         setPtt(!!p.push_to_talk_default);
+        setContrast(!!p.high_contrast);
         setPhone(p.phone ?? "");
         setPhoneSaved(p.phone ?? "");
       }
@@ -57,7 +59,7 @@ function ProfilePage() {
     })();
   }, [fetchAdminStatus]);
 
-  const persist = async (patch: { theme_preference?: Theme; font_scale?: number; push_to_talk_default?: boolean; phone?: string | null }) => {
+  const persist = async (patch: { theme_preference?: Theme; font_scale?: number; push_to_talk_default?: boolean; high_contrast?: boolean; phone?: string | null }) => {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
     return supabase.from("profiles").update(patch).eq("id", data.user.id);
@@ -76,6 +78,12 @@ function ProfilePage() {
   const onPtt = (v: boolean) => {
     setPtt(v);
     persist({ push_to_talk_default: v });
+  };
+
+  const onContrast = (v: boolean) => {
+    setContrast(v);
+    updateAppearance({ contrast: v });
+    persist({ high_contrast: v });
   };
 
   const savePhone = async () => {
@@ -138,6 +146,19 @@ function ProfilePage() {
             <span
               className="absolute left-0 top-0.5 h-6 w-6 rounded-pill bg-white shadow-sm transition-transform"
               style={{ transform: ptt ? "translateX(22px)" : "translateX(2px)" }}
+            />
+          </button>
+        </Row>
+        <Row label="High contrast">
+          <button
+            onClick={() => onContrast(!contrast)}
+            aria-label="High contrast"
+            className={`relative h-7 w-12 shrink-0 overflow-hidden rounded-pill transition-colors ${contrast ? "bg-accent" : "bg-border"}`}
+            aria-pressed={contrast}
+          >
+            <span
+              className="absolute left-0 top-0.5 h-6 w-6 rounded-pill bg-white shadow-sm transition-transform"
+              style={{ transform: contrast ? "translateX(22px)" : "translateX(2px)" }}
             />
           </button>
         </Row>

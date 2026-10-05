@@ -27,28 +27,41 @@ export const Route = createFileRoute("/_authenticated/reports")({
 
 function ReportsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
+  const [err, setErr] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const load = async (offset: number) => {
+      setErr(false);
+      const { data, error } = await supabase
         .from("reports")
         .select("session_id, overall_score, communication_score, created_at, interview_sessions(role_title)")
-        .order("created_at", { ascending: false });
-      setRows(
-        (data || []).map((r) => ({
+        .order("created_at", { ascending: false })
+        .range(offset, offset + 19);
+      if (error) return setErr(true);
+      setHasMore((data || []).length === 20);
+      const mapped = (data || []).map((r) => ({
           session_id: r.session_id,
           overall_score: r.overall_score,
           communication_score: r.communication_score,
           created_at: r.created_at,
           role_title:
             (r.interview_sessions as { role_title: string | null } | null)?.role_title ?? null,
-        })),
-      );
-    })();
+        }));
+      setRows((prev) => (offset === 0 ? mapped : [...(prev || []), ...mapped]));
+  };
+  useEffect(() => {
+    load(0);
   }, []);
 
   return (
     <main className="mx-auto max-w-lg px-6 pt-10">
       <h1 className="text-h1">Reports</h1>
+      {err && (
+        <p className="mt-4 text-body-sm text-danger">
+          Couldn't load reports.{" "}
+          <button onClick={() => load(rows?.length ?? 0)} className="underline">Retry</button>
+        </p>
+      )}
       {rows === null ? (
         <ul className="mt-5 space-y-3">
           {[1, 2, 3].map((i) => (
@@ -82,6 +95,15 @@ function ReportsPage() {
             </li>
           ))}
         </ul>
+      )}
+      {hasMore && (
+        <button
+          onClick={async () => { setLoadingMore(true); await load(rows?.length ?? 0); setLoadingMore(false); }}
+          disabled={loadingMore}
+          className="pill mx-auto mb-8 mt-4 flex min-h-[44px] px-5 text-body-sm"
+        >
+          {loadingMore ? "Loading…" : "Load more"}
+        </button>
       )}
     </main>
   );

@@ -128,6 +128,40 @@ function InterviewPage() {
     };
   }, [id]);
 
+  // Reconnect handling: pause listening while offline, resync saved turns when back.
+  const [offline, setOffline] = useState(false);
+  const resync = async () => {
+    const { data: t, error } = await supabase
+      .from("turns")
+      .select("id, sequence_number, type, text")
+      .eq("session_id", id)
+      .order("sequence_number");
+    if (error) return setConnErr("Still reconnecting…");
+    setConnErr(null);
+    setOffline(!navigator.onLine);
+    setTurns((prev) => {
+      const next = (t as Turn[]) || [];
+      return next.length >= prev.length ? next : prev;
+    });
+  };
+  useEffect(() => {
+    const goOffline = () => {
+      setOffline(true);
+      try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+      recognitionRef.current = null;
+      setListening(false);
+      clearSilenceTimer();
+    };
+    const goOnline = () => { void resync(); };
+    if (!navigator.onLine) setOffline(true);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, [id]);
+
   // Timer
   useEffect(() => {
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000)), 500);
@@ -374,9 +408,10 @@ function InterviewPage() {
         </div>
       </header>
 
-      {connErr && (
-        <div className="mx-6 mt-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-center text-caption text-warning">
-          {connErr}
+      {(connErr || offline) && (
+        <div role="status" className="mx-6 mt-3 flex items-center justify-center gap-3 rounded-sm border border-warning/40 bg-warning/10 p-2 text-center text-caption text-warning">
+          <span>{offline ? "Connection lost — reconnecting…" : connErr}</span>
+          <button onClick={resync} className="underline">Retry</button>
         </div>
       )}
 
